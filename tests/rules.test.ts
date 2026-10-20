@@ -20,6 +20,7 @@ import {
 } from '../src/game/engine/flow';
 import { generateBamboo, selectEventId, validateRoute } from '../src/game/engine/run';
 import { unit } from '../src/game/engine/rng';
+import { computeStats } from '../src/game/engine/stats';
 import { validateContent, validateSave } from '../src/game/engine/validate';
 import { EVENTS } from '../src/game/content';
 import type { SaveData, StepResult } from '../src/game/types';
@@ -149,7 +150,12 @@ describe('story, battle, settlement', () => {
     if (broken.ok) {
       expect(broken.save.player.realm).toBe('qi');
       expect(broken.save.player.learnedHeartIds).toContain('heart_yangyuan');
+      expect(broken.save.player.equipment.heartId).toBe('heart_yangyuan');
       expect(broken.save.world.unlockedLocations).toContain('loc_bamboo');
+      expect(broken.save.screen).toBe('breakthrough');
+      const after = computeStats(broken.save.player);
+      expect(broken.save.ceremonyBaseline?.maxHp).toBeLessThan(after.maxHp);
+      expect(broken.save.ceremonyBaseline?.maxMp).toBeLessThan(after.maxMp);
     }
 
     let retreat = taught();
@@ -218,6 +224,19 @@ describe('story, battle, settlement', () => {
     const spent = hp - (save.run!.battle?.enemyHp ?? 0);
     expect(save.run?.battle?.log.some((line) => line.includes('停下'))).toBe(true);
     expect(spent).toBeLessThan(40);
+  });
+
+  it('does not apply the same battle round twice', () => {
+    let save = taught();
+    save = take(startDungeon(save, 'tutorial', [], 3));
+    save = take(chooseNode(save, save.run!.map[0].id));
+    const round = save.run!.battle!.round;
+    save = take(actInBattle(save, 'attack', round));
+    const hp = save.run!.battle!.enemyHp;
+    const again = actInBattle(save, 'attack', round);
+    expect(again.ok).toBe(false);
+    expect(save.run!.battle!.enemyHp).toBe(hp);
+    expect(save.run!.battle!.lastBrief).toContain('敌方气血');
   });
 });
 

@@ -15,6 +15,7 @@ export interface CreateDraft {
   talentId: string;
   offeredTalentIds: string[];
   seed: number;
+  step: 0 | 1;
 }
 
 interface ConfirmState {
@@ -95,6 +96,7 @@ export function makeDraft(seed = Date.now() % 100000): CreateDraft {
     talentId: list[0],
     offeredTalentIds: list.slice(0, 3),
     seed,
+    step: 0,
   };
 }
 

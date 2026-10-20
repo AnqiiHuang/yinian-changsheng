@@ -27,6 +27,12 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Check content
+        run: npm run check:content
       - name: Build
         run: npm run build
       - name: Upload Pages artifact

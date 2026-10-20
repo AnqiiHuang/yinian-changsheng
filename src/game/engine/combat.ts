@@ -359,12 +359,23 @@ function grantReward(save: SaveData, battle: BattleState): void {
   pushLog(battle, '战斗的收获先放进本局战利里，结算前还不算真正带出。');
 }
 
+export function burnTickDamage(battle: BattleState): number {
+  const burn = battle.statuses.find((status) => status.id === 'burn');
+  if (!burn) return 0;
+  const ratio = BALANCE.burnRatio + blessing(battle, 'bless_burn') * BALANCE.burnDeepPerStack;
+  return Math.max(1, Math.round(burn.sourceAtk * ratio)) * burn.stacks;
+}
+
 export function playAction(save: SaveData, action: BattleAction): string | null {
   const run = save.run;
   const battle = run?.battle;
   if (!run || !battle) return '现在没有战斗';
   const rejected = actionRejection(battle, action, save);
   if (rejected) return rejected;
+  const logStart = battle.log.length;
+  const enemyBefore = battle.enemyHp;
+  const playerBefore = battle.playerHp;
+  const enemyShieldBefore = battle.enemyShield;
   battle.counters.extraThisTurn = 0;
   battle.counters.jadeThisTurn = 0;
   if (action === 'attack') strikeEnemy(battle, run.seed, battle.school === 'fire' ? 0.85 : 1, 'basic', 0);
@@ -386,10 +397,19 @@ export function playAction(save: SaveData, action: BattleAction): string | null 
       pushLog(battle, `你服下凝神散，灵力恢复${BALANCE.powderMp}。`);
     }
   }
+  const closeBrief = () => {
+    const added = battle.log.slice(logStart).filter((line) => !line.startsWith('战斗的收获') && !line.startsWith('对手倒下') && !line.startsWith('对手倒在'));
+    const parts = added.slice(0, 3);
+    if (enemyBefore !== battle.enemyHp) parts.push(`敌方气血${enemyBefore}→${battle.enemyHp}`);
+    if (playerBefore !== battle.playerHp) parts.push(`我方气血${playerBefore}→${battle.playerHp}`);
+    if (enemyShieldBefore > battle.enemyShield) parts.push(`护盾吸收${enemyShieldBefore - battle.enemyShield}`);
+    battle.lastBrief = parts.join(' · ');
+  };
   if (battle.enemyHp <= 0) {
     battle.finished = 'win';
     grantReward(save, battle);
     pushLog(battle, '对手倒下了。');
+    closeBrief();
     syncRun(run, battle);
     return null;
   }
@@ -397,6 +417,7 @@ export function playAction(save: SaveData, action: BattleAction): string | null 
   if (battle.playerHp <= 0) {
     battle.finished = 'lose';
     pushLog(battle, '你支撑不住，这场战斗失败了。');
+    closeBrief();
     syncRun(run, battle);
     return null;
   }
@@ -404,6 +425,7 @@ export function playAction(save: SaveData, action: BattleAction): string | null 
   if (battle.playerHp <= 0) {
     battle.finished = 'lose';
     pushLog(battle, '持续的伤势同时压过了双方。按这一路的规矩，算你战败。');
+    closeBrief();
     syncRun(run, battle);
     return null;
   }
@@ -411,6 +433,7 @@ export function playAction(save: SaveData, action: BattleAction): string | null 
     battle.finished = 'win';
     grantReward(save, battle);
     pushLog(battle, '对手倒在余烬里。');
+    closeBrief();
     syncRun(run, battle);
     return null;
   }
@@ -418,6 +441,7 @@ export function playAction(save: SaveData, action: BattleAction): string | null 
   battle.counters.triggers = 0;
   battle.intentIndex += 1;
   battle.round += 1;
+  closeBrief();
   syncRun(run, battle);
   return null;
 }

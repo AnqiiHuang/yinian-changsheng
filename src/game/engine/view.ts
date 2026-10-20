@@ -1,8 +1,8 @@
-import { DUNGEON_INFO, REALM_NAME, nextStageNeed } from '../balance/config';
+import { BALANCE, DUNGEON_INFO, REALM_NAME, nextStageNeed } from '../balance/config';
 import { CODEX_MAP, EVENT_MAP, ITEM_MAP, NPC_MAP, FACTIONS } from '../content';
-import type { EventChoice, SaveData } from '../types';
+import type { BattleState, EventChoice, SaveData } from '../types';
 import { choiceBlock, costAmount } from './conditions';
-import { currentIntent } from './combat';
+import { burnTickDamage, currentIntent } from './combat';
 import { calendarLabel, realmLabel } from './flow';
 import { blessingText } from './run';
 import { computeStats } from './stats';
@@ -34,11 +34,11 @@ export function goalOf(save: SaveData): { title: string; how: string } {
   if (save.player.realm === 'mortal' && save.player.cultivation < 50) {
     return { title: '把修为积到五十，再尝试引气', how: `还差${50 - save.player.cultivation}点。把引气试炼胜利走完，修为会一次补到门槛。` };
   }
-  if (save.player.realm === 'mortal') return { title: '回到修行页，尝试引气', how: '打开修行，点击尝试突破。这次引气不会失败，也不会抽签。' };
+  if (save.player.realm === 'mortal') return { title: '回到修行页，尝试引气', how: '打开修行，点击尝试引气。这次引气不会失败，也不会抽签。' };
   const marrow = save.player.inventory.filter((item) => item.definitionId === 'mat_marrow').reduce((sum, item) => sum + item.qty, 0);
   return {
-    title: '探索雾隐竹林，寻找筑基所需的青髓草',
-    how: `雾骨山魈每次战胜都会留下1株青髓草，目前持有${marrow}株。它蓄力后的重击可用守御减半。筑基还需要凝露芝，那种材料不在这一段的掉落里。`,
+    title: '走一遍雾隐竹林',
+    how: `当前体验到炼气。雾骨山魈每次战胜留下1株青髓草，目前持有${marrow}株。它蓄力后的重击可用守御减半。筑基试炼还没有开放。`,
   };
 }
 
@@ -52,7 +52,7 @@ export interface ActionLink {
 
 export function homeActions(save: SaveData): ActionLink[] {
   if (save.settlement && !save.settlement.claimed) return [{ id: 'claim', label: '领取上一场收获', detail: '还没收入行囊' }];
-  if (save.run) return [{ id: 'continue', label: '继续未完成的历练', detail: '回到刚才的选择' }];
+  if (save.run) return [{ id: 'continue', label: `继续历练 · 第${save.run.layer + 1}处`, detail: '回到刚才的选择' }];
   const actions: ActionLink[] = [];
   if (!save.world.flags.rain_done) actions.push({ id: 'rain', label: '前往山雨破庙', detail: '雨已经落到残瓦上' });
   else if (!save.world.flags.qi_taught) actions.push({ id: 'shen', label: '走向侧殿，请教沈砚', detail: '选择一门基础功法' });
@@ -60,7 +60,7 @@ export function homeActions(save: SaveData): ActionLink[] {
     actions.push({ id: 'tutorial', label: save.world.flags.tutorial_completed ? '再走一次引气试炼' : '开始引气试炼', detail: '三处节点，可在最后安全撤离' });
     if (save.player.cultivation >= 50 && save.world.flags.tutorial_completed) actions.push({ id: 'break', label: '尝试引气', detail: '条件已经齐了' });
   }
-  if (save.player.realm !== 'mortal') actions.push({ id: 'bamboo', label: '前往雾隐竹林', detail: '十处节点，首领是雾骨山魈' });
+  if (save.player.realm !== 'mortal') actions.push({ id: 'bamboo', label: '前往雾隐竹林', detail: '当前体验到炼气。十处节点，首领是雾骨山魈' });
   if (save.world.flags.rain_2_done && !save.world.flags.rain_3_done) actions.push({ id: 'rain3', label: '去听秦照的下文', detail: '残碑的两种说法' });
   else if ((save.world.counters.settledRuns ?? 0) >= 2 && save.world.flags.rain_chain_started && !save.world.flags.rain_2_done) {
     actions.push({ id: 'rain2', label: '查看村口的来信', detail: '秦照写来的' });
@@ -114,6 +114,42 @@ export function progressText(save: SaveData): { label: string; current: number; 
     current: save.player.cultivation,
     max: need.need,
     hint: save.player.insightReserve > 0 ? `见闻储备 ${save.player.insightReserve}` : `下一程：${need.label}`,
+  };
+}
+
+export function actionHints(): { attack: string; defend: string; spell: string; spellCost: number } {
+  return {
+    attack: '无消耗',
+    defend: `减伤${Math.round(BALANCE.defendReduction * 100)}% · 回灵${BALANCE.defendMp}`,
+    spell: `灵力${BALANCE.spellCost}`,
+    spellCost: BALANCE.spellCost,
+  };
+}
+
+export function intentAdvice(kind: string): string {
+  if (kind === 'heavy') return '守御可将这次直接伤害减半';
+  if (kind === 'charge') return '这一下还没打出，下一手再看要不要守御';
+  if (kind === 'guard') return '它在给自己加护盾';
+  return '普通交手';
+}
+
+export function battleStatus(battle: BattleState): { sword: string; swordNote: string; burn: string; shield: number } {
+  const sword = battle.statuses.find((status) => status.id === 'swordIntent');
+  const burn = battle.statuses.find((status) => status.id === 'burn');
+  const echo = battle.blessings.find((entry) => entry.id === 'bless_sword_echo')?.stacks ?? 0;
+  const swordNote = battle.school !== 'sword'
+    ? ''
+    : echo > 0
+      ? '剑阵回响会在施术时消耗剑意'
+      : '当前造化不会消耗剑意，施术仍会积1层';
+  const burnText = burn
+    ? `灼烧${burn.stacks}层 · 剩余${burn.turns}回合 · 回合末约${burnTickDamage(battle)}点，施术可引爆`
+    : '';
+  return {
+    sword: battle.school === 'sword' ? `剑意 ${sword?.stacks ?? 0}/${BALANCE.swordIntentMax}` : '',
+    swordNote,
+    burn: burnText,
+    shield: battle.playerShield,
   };
 }
 

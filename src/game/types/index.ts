@@ -226,6 +226,7 @@ export interface BattleState {
   intentIndex: number;
   statuses: StatusInstance[];
   log: string[];
+  lastBrief?: string;
   counters: Record<string, number>;
   finished: 'win' | 'lose' | null;
   auto: boolean;
@@ -361,6 +362,7 @@ export interface Settings {
   fontScale: 'standard' | 'large' | 'xlarge';
   reduceMotion: boolean;
   battleSpeed: 'normal' | 'fast';
+  narrative?: 'full' | 'type';
 }
 
 export interface AnalyticsEvent {
@@ -382,6 +384,7 @@ export interface SaveData {
   codex: CodexState;
   ledger: { claimedRewardIds: string[]; storyGrants: string[] };
   settings: Settings;
+  ceremonyBaseline?: { maxHp: number; atk: number; def: number; maxMp: number };
   screen: ScreenId;
   townEvent: TownEvent | null;
   analytics: AnalyticsEvent[];

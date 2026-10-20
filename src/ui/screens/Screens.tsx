@@ -32,14 +32,17 @@ import {
 } from '../../game/engine/flow';
 import { suggestAction } from '../../game/engine/combat';
 import {
+  actionHints,
   activeEvent,
   ageText,
+  battleStatus,
   blessingCards,
   choiceViews,
   codexLines,
   dungeonCopy,
   goalOf,
   homeActions,
+  intentAdvice,
   knownFactions,
   knownNpcs,
   playerStats,
@@ -114,56 +117,91 @@ export function CreateScreen() {
   const existing = useGame((state) => state.save);
   useEffect(() => { useGame.getState().ensureDraft(); }, []);
   if (!draft) return null;
+  const step = draft.step ?? 0;
   const length = visibleTextLength(draft.name.trim());
   const invalid = length < 2 || length > 12;
+  const appearance = APPEARANCES.find((item) => item.id === draft.appearanceId);
+  const origin = ORIGINS.find((item) => item.id === draft.originId);
+  const talent = TALENTS.find((item) => item.id === draft.talentId);
+  const back = () => {
+    if (step === 1) {
+      setDraft({ step: 0 });
+      return;
+    }
+    if (existing) act((current) => moveScreen(current, 'opening'));
+    else useGame.getState().setGuest('opening');
+  };
   return (
     <main className="main stack">
-      <p className="eyebrow">青禾村 · 十八岁</p>
-      <h1 className="page-title">写下名字</h1>
-      <label className="field">名字
-        <input aria-label="名字" value={draft.name} onChange={(event) => setDraft({ name: event.target.value })} />
-      </label>
-      <button className="btn ghost" onClick={() => setDraft({ name: NAME_POOL[Math.floor(Math.random() * NAME_POOL.length)] })}>随机取一个名字</button>
-      {invalid ? <p className="reason">名字需要 2 到 12 个字。当前 {length} 个。</p> : null}
-      <h2>形象</h2>
-      {APPEARANCES.map((item) => (
-        <button key={item.id} className={draft.appearanceId === item.id ? 'option on' : 'option'} onClick={() => setDraft({ appearanceId: item.id })}>
-          <strong>{item.name}</strong>
-          <div className="muted">{item.summary}</div>
-        </button>
-      ))}
-      <h2>出身</h2>
-      {ORIGINS.map((item) => (
-        <button key={item.id} className={draft.originId === item.id ? 'option on' : 'option'} onClick={() => setDraft({ originId: item.id })}>
-          <strong>{item.name}</strong>
-          <div className="muted">{item.summary}</div>
-        </button>
-      ))}
-      <h2>天赋</h2>
-      <p className="muted">这次给出三门，只选一门。刷新页面不会重抽。</p>
-      {draft.offeredTalentIds.map((id) => {
-        const talent = TALENTS.find((item) => item.id === id);
-        if (!talent) return null;
-        return (
-          <button key={id} className={draft.talentId === id ? 'option on' : 'option'} onClick={() => setDraft({ talentId: id })}>
-            <strong>{talent.name}</strong>
-            <div className="muted">{talent.summary}</div>
-          </button>
-        );
-      })}
-      <button className="btn primary" data-testid="confirm-create" disabled={invalid} onClick={() => {
-        const result = createSave(draft);
-        if (!result.ok) {
-          useGame.setState({ toast: result.error });
-          return;
-        }
-        replaceSave(result.save, existing ? '新的人生开始了' : '你站在青禾村的旧屋前');
-      }}>踏入青禾</button>
-      <button className="btn ghost" onClick={() => {
-        if (existing) act((current) => moveScreen(current, 'opening'));
-        else useGame.getState().setGuest('opening');
-      }}>返回</button>
+      <p className="eyebrow">青禾村 · 十八岁 · {step === 0 ? '一' : '二'}</p>
+      <h1 className="page-title">{step === 0 ? '你是谁' : '你从何处来'}</h1>
+      {step === 0 ? (
+        <>
+          <label className="field">名字
+            <input aria-label="名字" value={draft.name} onChange={(event) => setDraft({ name: event.target.value })} />
+          </label>
+          <button className="btn ghost" onClick={() => setDraft({ name: NAME_POOL[Math.floor(Math.random() * NAME_POOL.length)] })}>随机取一个名字</button>
+          {invalid ? <p className="reason">名字需要 2 到 12 个字。当前 {length} 个。</p> : null}
+          <h2>形象</h2>
+          <p className="muted">只改外形，不改气血和攻击。</p>
+          {APPEARANCES.map((item) => (
+            <button key={item.id} className={draft.appearanceId === item.id ? 'option on figure' : 'option figure'} onClick={() => setDraft({ appearanceId: item.id })}>
+              <AppearanceMark id={item.id} />
+              <span><strong>{item.name}</strong><div className="muted">{item.summary}</div></span>
+            </button>
+          ))}
+          <button className="btn primary" disabled={invalid} onClick={() => setDraft({ step: 1 })}>下一步</button>
+        </>
+      ) : (
+        <>
+          <h2>出身</h2>
+          {ORIGINS.map((item) => (
+            <button key={item.id} className={draft.originId === item.id ? 'option on' : 'option'} onClick={() => setDraft({ originId: item.id })}>
+              <strong>{item.name}</strong>
+              <div className="muted">{item.summary}</div>
+            </button>
+          ))}
+          <h2>天赋</h2>
+          <p className="muted">这次给出三门，只选一门。刷新页面不会重抽。</p>
+          {draft.offeredTalentIds.map((id) => {
+            const offered = TALENTS.find((item) => item.id === id);
+            if (!offered) return null;
+            return (
+              <button key={id} className={draft.talentId === id ? 'option on' : 'option'} onClick={() => setDraft({ talentId: id })}>
+                <strong>{offered.name}</strong>
+                <div className="muted">{offered.summary}</div>
+              </button>
+            );
+          })}
+          <div className="panel">
+            <strong>{draft.name.trim() || '未名'}</strong>
+            <p className="muted">{appearance?.name} · {origin?.name} · {talent?.name}</p>
+          </div>
+          <button className="btn primary" data-testid="confirm-create" disabled={invalid} onClick={() => {
+            const result = createSave(draft);
+            if (!result.ok) {
+              useGame.setState({ toast: result.error });
+              return;
+            }
+            replaceSave(result.save, existing ? '新的人生开始了' : '你站在青禾村的旧屋前');
+          }}>踏入青禾</button>
+        </>
+      )}
+      <button className="btn ghost" onClick={back}>{step === 1 ? '返回上一步' : '返回'}</button>
     </main>
+  );
+}
+
+function AppearanceMark({ id }: { id: string }) {
+  const robe = id === 'app_robe';
+  const plain = id === 'app_plain';
+  return (
+    <svg viewBox="0 0 48 64" className="figure-mark" aria-hidden="true">
+      <circle cx="24" cy="14" r="7" />
+      {robe ? <path d="M14 28h20l6 28H8z" /> : null}
+      {plain ? <path d="M16 28h16v12H16zM18 40h5v16h-5zM25 40h5v16h-5z" /> : null}
+      {!robe && !plain ? <path d="M16 30h16l2 10H14zM17 40h6v16h-6zM25 40h6v16h-6z" /> : null}
+    </svg>
   );
 }
 
@@ -172,27 +210,25 @@ export function HomeScreen({ save }: { save: SaveData }) {
   const goal = goalOf(save);
   const actions = homeActions(save);
   const stats = playerStats(save);
+  const progress = progressText(save);
+  const [primary, ...rest] = actions;
+  const place = LOCATIONS.find((item) => item.id === save.world.currentLocation)?.name ?? '青禾村';
   return (
     <TownFrame save={save}>
-      <p className="eyebrow">{save.player.name} · {ageText(save)}</p>
-      <h1 className="page-title">{progressText(save).label}</h1>
-      <SceneArt scene={save.player.realm === 'mortal' ? 'village' : 'bamboo'} alt={save.player.realm === 'mortal' ? '青禾远山' : '雾隐竹林'} />
-      <div className="statrow" style={{ margin: '12px 0' }}>
-        <span className="stat">修为 {save.player.cultivation}</span>
-        <span className="stat">灵石 {save.player.spiritStones}</span>
-        <span className="stat">气血 {stats.maxHp}</span>
-      </div>
+      <p className="eyebrow">{place} · {ageText(save)}</p>
+      <SceneArt className="scene banner home-banner" scene={save.player.realm === 'mortal' ? 'village' : 'bamboo'} alt={save.player.realm === 'mortal' ? '青禾远山' : '雾隐竹林'} />
+      <p className="stat progress-line">{progress.label} {progress.current}/{progress.max}</p>
       <button className="goal" onClick={() => setOpen((value) => !value)}>
         <div className="eyebrow">当前目标</div>
         <strong>{goal.title}</strong>
       </button>
       {open ? <p className="prose">{goal.how}</p> : null}
-      <div className="stack" style={{ marginTop: 12 }}>
-        {actions.map((action) => (
-          <ChoiceButton key={action.id} label={action.label} detail={action.detail} onClick={() => runHome(action.id)} />
-        ))}
-      </div>
-      <p className="feedback">{save.world.feedback}</p>
+      {primary ? <button className="btn primary" onClick={() => runHome(primary.id)}>{primary.label}<small>{primary.detail}</small></button> : null}
+      {rest.map((action) => (
+        <button key={action.id} className="btn ghost" onClick={() => runHome(action.id)}>{action.label}</button>
+      ))}
+      <p className="muted">灵石 {save.player.spiritStones} · 气血 {stats.maxHp}</p>
+      {save.world.feedback ? <p className="feedback">{save.world.feedback}</p> : null}
     </TownFrame>
   );
 }
@@ -215,11 +251,39 @@ export function MapScreen({ save }: { save: SaveData }) {
   const [place, setPlace] = useState(save.world.currentLocation);
   const selected = LOCATIONS.find((item) => item.id === place) ?? LOCATIONS[0];
   const bambooOpen = save.world.unlockedLocations.includes('loc_bamboo');
+  const spots = [
+    { id: 'loc_qinghe', x: 78, y: 168 },
+    { id: 'loc_shrine', x: 168, y: 108 },
+    { id: 'loc_bamboo', x: 262, y: 58 },
+  ];
   return (
     <TownFrame save={save}>
       <h1 className="page-title">青岚州</h1>
-      <p className="muted">州中其余去处还只在传闻里，这一段先不设空入口。</p>
-      <div className="stack">
+      <p className="muted">州外只有淡淡山势和传闻。这一段没有做成空入口。</p>
+      <div className="paper-map">
+        <svg viewBox="0 0 340 220" className="paper-map-art" aria-hidden="true">
+          <path className="land" d="M0 150 C70 120 120 140 180 118 C230 100 280 130 340 110 V220 H0Z" />
+          <path d="M0 40 C80 20 140 70 220 36 C270 16 310 48 340 30" fill="none" />
+          <path d="M78 168 L168 108 L262 58" fill="none" />
+        </svg>
+        {spots.map((spot) => {
+          const location = LOCATIONS.find((item) => item.id === spot.id);
+          const locked = spot.id === 'loc_bamboo' && !bambooOpen;
+          return (
+            <button
+              key={spot.id}
+              className={place === spot.id ? 'map-pin here' : 'map-pin'}
+              style={{ left: `${(spot.x / 340) * 100}%`, top: `${(spot.y / 220) * 100}%` }}
+              disabled={locked}
+              onClick={() => setPlace(spot.id)}
+            >
+              {location?.name}
+              {save.world.currentLocation === spot.id ? <i>所在</i> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="stack map-list">
         {LOCATIONS.map((location) => {
           const locked = location.id === 'loc_bamboo' && !bambooOpen;
           if (locked) {
@@ -233,7 +297,8 @@ export function MapScreen({ save }: { save: SaveData }) {
           );
         })}
       </div>
-      <SceneArt scene={selected.scene} alt={selected.name} />
+      <div className="panel">
+      <SceneArt scene={selected.scene} className="scene banner home-banner" alt={selected.name} />
       <p className="prose">{selected.desc}</p>
       {selected.id === 'loc_qinghe' ? (
         <div className="stack">
@@ -246,6 +311,7 @@ export function MapScreen({ save }: { save: SaveData }) {
       {selected.id === 'loc_shrine' && save.world.flags.qi_taught ? <button className="btn" onClick={() => runHome('tutorial')}>整理行装，去引气试炼</button> : null}
       {selected.id === 'loc_bamboo' && bambooOpen ? <button className="btn primary" onClick={() => runHome('bamboo')}>准备进入竹林</button> : null}
       {save.run ? <button className="btn primary" onClick={() => runHome('continue')}>继续历练</button> : null}
+      </div>
     </TownFrame>
   );
 }
@@ -404,14 +470,14 @@ export function EventScreen({ save }: { save: SaveData }) {
       <main className="main">
         <SceneHeader scene={event.scene} kicker={inRun ? '秘境中' : '青岚'} title={event.title} />
         {event.result ? (
-          <div className="stack">
+          <div className="stack result-block">
             <p className="prose">{event.result.text}</p>
-            <RewardPanel lines={event.result.deltas} />
+            {event.result.deltas.length ? <RewardPanel lines={event.result.deltas} /> : null}
             <button className="btn primary" data-testid="continue-result" onClick={() => act((current) => current.run ? continueAfterResult(current) : continueTown(current))}>继续</button>
           </div>
         ) : (
           <>
-            <NarrativePanel text={event.body} reduce={reduce} />
+            <NarrativePanel text={event.body} mode={reduce ? 'full' : save.settings.narrative} />
             <div className="stack">
               {views.map(({ choice, disabled, reason, detail }) => (
                 <ChoiceButton key={choice.id} label={choice.label} detail={detail} disabled={disabled} reason={reason} onClick={() => act((current) => current.run ? chooseRunOption(current, choice.id) : chooseTownOption(current, choice.id))} />
@@ -426,8 +492,13 @@ export function EventScreen({ save }: { save: SaveData }) {
 
 export function BattleScreen({ save }: { save: SaveData }) {
   const battle = save.run?.battle;
-  const [full, setFull] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [bagOpen, setBagOpen] = useState(false);
+  const [blessOpen, setBlessOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [pulse, setPulse] = useState(0);
+  const [struck, setStruck] = useState(false);
+  const ask = useGame((state) => state.ask);
   useEffect(() => {
     const onVisible = () => {
       if (!document.hidden) setPulse((value) => value + 1);
@@ -436,66 +507,150 @@ export function BattleScreen({ save }: { save: SaveData }) {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
   useEffect(() => {
-    if (!battle?.auto || battle.finished || document.hidden) return;
+    if (!battle?.auto || battle.finished || document.hidden || paused) return;
     const delay = save.settings.battleSpeed === 'fast' ? 280 : 700;
     const timer = window.setTimeout(() => {
+      if (document.hidden) return;
       act((current) => {
         const live = current.run?.battle;
-        if (!live || live.finished || !live.auto) return { ok: true, save: current };
-        return actInBattle(current, suggestAction(live, current));
+        if (!live || live.finished || !live.auto || document.hidden) return { ok: true, save: current };
+        return actInBattle(current, suggestAction(live, current), live.round);
       });
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [battle?.auto, battle?.round, battle?.finished, pulse, save.settings.battleSpeed]);
+  }, [battle?.auto, battle?.round, battle?.finished, pulse, paused, save.settings.battleSpeed]);
+  useEffect(() => {
+    if (!battle?.lastBrief || save.settings.reduceMotion) return;
+    setStruck(true);
+    const timer = window.setTimeout(() => setStruck(false), 200);
+    return () => window.clearTimeout(timer);
+  }, [battle?.lastBrief, battle?.round, save.settings.reduceMotion]);
   if (!battle || !save.run) return null;
   const enemy = ENEMY_MAP[battle.enemyId];
-  const intent = enemy?.intents[battle.intentIndex % enemy.intents.length];
-  const logs = full ? battle.log : battle.log.slice(-4);
+  const intent = enemy?.intents[battle.intentIndex % (enemy?.intents.length || 1)];
+  const hints = actionHints();
+  const status = battleStatus(battle);
+  const logs = battle.log.slice(-3);
   const beaten = Boolean(save.world.flags[`beat:${battle.enemyId}`]);
-  const pill = save.run.supplies.some((item) => item.definitionId === 'con_heal' && item.qty > 0);
-  const powder = save.run.supplies.some((item) => item.definitionId === 'con_mind' && item.qty > 0);
+  const supplies = save.run.supplies.filter((item) => item.qty > 0);
+  const spellShort = battle.playerMp < hints.spellCost;
+  const play = (action: 'attack' | 'defend' | 'spell' | 'pill' | 'powder') => {
+    const round = battle.round;
+    act((current) => actInBattle(current, action, round));
+  };
+  const rank = enemy?.rank === 'boss' ? '首领' : enemy?.rank === 'elite' ? '精英' : '普通';
   return (
-    <>
-      <TopStatusBar save={save} />
-      <main className="main stack">
-        <SceneArt scene="bamboo" alt={enemy?.name ?? '战斗'} />
+    <div className="battle-page">
+      <TopStatusBar save={save} combat onPause={() => { setPaused(true); if (battle.auto) act((current) => setBattleAuto(current, false)); }} />
+      <main className="main battle-main">
+        <SceneArt className={`enemy-art${struck ? ' struck' : ''}`} scene={battle.enemyId} alt={enemy?.name ?? '对手'} />
         <div className="split">
           <h1 className="page-title">{enemy?.name}</h1>
-          <DangerBadge text={enemy?.danger ?? '中'} />
+          <DangerBadge text={`${rank} · ${enemy?.danger ?? '中'}`} />
         </div>
         <div className="bars">
-          <div>气血 {battle.enemyHp}/{battle.enemyMaxHp}</div>
-          <div className="bar"><i style={{ width: `${(battle.enemyHp / battle.enemyMaxHp) * 100}%` }} /></div>
+          <div className="split"><span>气血 {battle.enemyHp}/{battle.enemyMaxHp}</span>{battle.enemyShield > 0 ? <span>护盾 {battle.enemyShield}</span> : <span>护盾 0</span>}</div>
+          <div className="bar"><i style={{ width: `${(battle.enemyHp / Math.max(1, battle.enemyMaxHp)) * 100}%` }} /></div>
+          {battle.enemyShield > 0 ? <div className="bar shield"><i style={{ width: `${Math.min(100, battle.enemyShield)}%` }} /></div> : null}
         </div>
-        <p>{battle.finished ? '战斗已经分出结果' : `下一手：${intent?.name}。${intent?.telegraph}`}</p>
+        {status.burn ? <p className="status-line">{status.burn}</p> : null}
+        <div className="intent">
+          <strong>{battle.finished ? (battle.finished === 'win' ? '胜' : '败') : `下一手 · ${intent?.name ?? '待机'}`}</strong>
+          <p>{battle.finished ? '战斗已经分出结果' : `${intent?.telegraph ?? ''} ${intentAdvice(intent?.kind ?? 'attack')}`}</p>
+        </div>
+        <div className="status-row">
+          {status.sword ? <span className="tag" title={status.swordNote}>{status.sword}</span> : null}
+          {status.shield > 0 ? <span className="tag">我方护盾 {status.shield}</span> : null}
+          {save.run.blessings.slice(0, 3).map((item) => (
+            <button key={item.id} className="tag tag-btn" onClick={() => setBlessOpen(true)}>{BLESSING_MAP[item.id]?.name ?? item.id} {item.stacks}/{BLESSING_MAP[item.id]?.max ?? item.stacks}</button>
+          ))}
+          {save.run.blessings.length > 3 ? <button className="tag tag-btn" onClick={() => setBlessOpen(true)}>全部造化</button> : null}
+        </div>
+        {status.swordNote ? <p className="muted">{status.swordNote}</p> : null}
+        {battle.lastBrief ? <p className="brief">{battle.lastBrief}</p> : null}
         <div className="log">
-          {logs.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}
+          {logs.map((line, index) => <p key={`${battle.round}-${index}-${line}`}>{line}</p>)}
         </div>
-        <button className="btn ghost" onClick={() => setFull((value) => !value)}>{full ? '收起记录' : '展开全部记录'}</button>
-        <div className="bars">
-          <div className="split"><span>我方气血 {battle.playerHp}/{battle.playerMaxHp}</span><span>灵力 {battle.playerMp}/{battle.playerMaxMp}</span></div>
-          <div className="bar"><i style={{ width: `${(battle.playerHp / battle.playerMaxHp) * 100}%` }} /></div>
-          <div className="bar mp"><i style={{ width: `${(battle.playerMp / Math.max(1, battle.playerMaxMp)) * 100}%` }} /></div>
-          {battle.playerShield > 0 ? <div>护盾 {battle.playerShield}</div> : null}
+        <button className="btn ghost" onClick={() => setLogOpen(true)}>展开战报</button>
+        {battle.finished ? <p className="muted">{battle.finished === 'win' ? '收获先记在本局，离开后再结算。' : '这场没有打赢。'}</p> : null}
+      </main>
+      <footer className="battle-dock">
+        <div className="split stat">
+          <span>气血 {battle.playerHp}/{battle.playerMaxHp}{status.shield > 0 ? ` · 护盾 ${status.shield}` : ''}</span>
+          <span>灵力 {battle.playerMp}/{battle.playerMaxMp}</span>
         </div>
+        <div className="bar"><i style={{ width: `${(battle.playerHp / Math.max(1, battle.playerMaxHp)) * 100}%` }} /></div>
         {battle.finished ? (
           <button className="btn primary" onClick={() => act((current) => leaveBattle(current))}>{battle.finished === 'win' ? '离开战斗' : '查看结算'}</button>
         ) : (
-          <div className="battle-actions">
-            <button className="btn primary" data-testid="battle-attack" onClick={() => act((current) => actInBattle(current, 'attack'))}>攻击</button>
-            <button className="btn" data-testid="battle-defend" onClick={() => act((current) => actInBattle(current, 'defend'))}>守御</button>
-            <button className="btn" data-testid="battle-spell" disabled={battle.playerMp < 8} onClick={() => act((current) => actInBattle(current, 'spell'))}>
-              施术{battle.playerMp < 8 ? `（灵力不足，还差${8 - battle.playerMp}）` : ''}
-            </button>
-            {pill ? <button className="btn ghost" onClick={() => act((current) => actInBattle(current, 'pill'))}>服下回春丹</button> : null}
-            {powder ? <button className="btn ghost" onClick={() => act((current) => actInBattle(current, 'powder'))}>服下凝神散</button> : null}
-            <button className="btn ghost" onClick={() => act((current) => setBattleAuto(current, !battle.auto))}>{battle.auto ? '停止自动' : '自动战斗'}</button>
-            {beaten && enemy?.rank === 'normal' ? <button className="btn ghost" onClick={() => act((current) => autoResolveBattle(current))}>快速结算</button> : null}
-            {enemy?.rank === 'boss' ? <p className="muted">首领默认手动。自动战斗使用同一套规则。</p> : null}
-          </div>
+          <>
+            <div className="battle-actions">
+              <button className="btn primary" data-testid="battle-attack" onClick={() => play('attack')}>攻击<small>{hints.attack}</small></button>
+              <button className="btn" data-testid="battle-defend" onClick={() => play('defend')}>守御<small>{hints.defend}</small></button>
+              <button className="btn spell" data-testid="battle-spell" disabled={spellShort} onClick={() => play('spell')}>
+                施术<small>{spellShort ? `还差${hints.spellCost - battle.playerMp}` : hints.spell}</small>
+              </button>
+            </div>
+            <div className="dock-row">
+              <button className="btn ghost" onClick={() => setBagOpen(true)}>补给</button>
+              <button className="btn ghost" onClick={() => act((current) => setBattleAuto(current, !battle.auto))}>{battle.auto ? '自动：开' : '自动：关'}</button>
+              {beaten && enemy?.rank === 'normal' ? <button className="btn ghost" onClick={() => act((current) => autoResolveBattle(current))}>快速结算</button> : null}
+            </div>
+            {enemy?.rank === 'boss' ? <p className="muted">首领默认手动。自动开启后仍用同一套规则。</p> : null}
+          </>
         )}
-      </main>
-    </>
+      </footer>
+      {bagOpen ? (
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="补给">
+          <div className="sheet-card stack">
+            <div className="split"><h2 className="page-title">携带的补给</h2><button className="icon-btn" aria-label="关闭" onClick={() => setBagOpen(false)}>关</button></div>
+            {supplies.length === 0 ? <EmptyState text="这场没有带丹药。" /> : supplies.map((item) => {
+              const def = ITEM_MAP[item.definitionId];
+              const action = item.definitionId === 'con_heal' ? 'pill' : item.definitionId === 'con_mind' ? 'powder' : null;
+              return (
+                <button key={item.instanceId} className="btn" disabled={!action || Boolean(battle.finished)} onClick={() => { if (action) play(action); setBagOpen(false); }}>
+                  {def?.name} ×{item.qty}<small>{def?.effectText}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {logOpen ? (
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="战报">
+          <div className="sheet-card stack">
+            <div className="split"><h2 className="page-title">战报</h2><button className="icon-btn" aria-label="关闭" onClick={() => setLogOpen(false)}>关</button></div>
+            <div className="log">{battle.log.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}</div>
+          </div>
+        </div>
+      ) : null}
+      {blessOpen ? (
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="造化">
+          <div className="sheet-card stack">
+            <div className="split"><h2 className="page-title">本局造化</h2><button className="icon-btn" aria-label="关闭" onClick={() => setBlessOpen(false)}>关</button></div>
+            {save.run.blessings.map((item) => <p key={item.id}>{BLESSING_MAP[item.id]?.name} {item.stacks}/{BLESSING_MAP[item.id]?.max}。{BLESSING_MAP[item.id]?.description}</p>)}
+          </div>
+        </div>
+      ) : null}
+      {paused ? (
+        <div className="modal" role="dialog" aria-modal="true" aria-label="暂停">
+          <div className="modal-card stack">
+            <h2 className="page-title">暂停</h2>
+            <p className="muted">战斗停在这一手。不能回城换装。</p>
+            <p>补给 {supplies.map((item) => `${ITEM_MAP[item.definitionId]?.name}×${item.qty}`).join('、') || '无'}</p>
+            <button className="btn" onClick={() => { setPaused(false); act((current) => moveScreen(current, 'settings')); }}>设置</button>
+            <button className="btn danger" onClick={() => ask({
+              title: '放弃这场历练',
+              body: '按战败结算：普通灵石和材料保留一半，未封存的新法宝与功法书失去。已学会的功法和原有装备保留。',
+              confirmLabel: '确认放弃',
+              danger: true,
+              run: () => act((current) => abandonRun(current)),
+            })}>放弃并结算</button>
+            <button className="btn primary" onClick={() => setPaused(false)}>继续战斗</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -503,22 +658,35 @@ export function SettlementScreen({ save }: { save: SaveData }) {
   const settlement = save.settlement;
   if (!settlement) return null;
   const title = settlement.kind === 'victory' ? '胜利' : settlement.kind === 'retreat' ? '撤离' : '战败';
+  const brought = settlement.items.filter((item) => !item.sealed);
+  const sealed = settlement.items.filter((item) => item.sealed);
+  const goal = goalOf({ ...save, settlement: { ...settlement, claimed: true }, run: null });
   return (
     <main className="main stack">
       <p className="eyebrow">{settlement.dungeonId === 'bamboo' ? '雾隐竹林' : '引气试炼'}</p>
       <h1 className="page-title">{title}</h1>
       <p className="prose">{settlement.summary}</p>
-      {settlement.advice ? <div className="banner-note">{settlement.advice}</div> : null}
+      <h2>带回</h2>
       <RewardPanel lines={[
         `灵石 +${settlement.stones}`,
         `修为 +${settlement.cultivation}`,
-        settlement.cultivationDropped ? `未带回的修为 ${settlement.cultivationDropped}` : '',
-        ...settlement.items.map((item) => `${ITEM_MAP[item.definitionId]?.name ?? item.definitionId} ×${item.qty}${item.sealed ? '（封存）' : ''}`),
-        ...settlement.returnedSupplies.map((item) => `带回${ITEM_MAP[item.definitionId]?.name ?? ''} ×${item.qty}`),
-        ...settlement.lost.map((item) => `失去 ${ITEM_MAP[item.definitionId]?.name ?? item.definitionId} ×${item.qty}`),
-      ].filter(Boolean)} />
-      <button className="btn primary" data-testid="claim" onClick={() => act((current) => claimSettlement(current))}>直接领取</button>
-      <p className="muted">正式广告未接入，这里没有额外领取。领过一次之后再点也不会重复发放。</p>
+        ...brought.map((item) => `${ITEM_MAP[item.definitionId]?.name ?? item.definitionId} ×${item.qty}`),
+      ]} />
+      {sealed.length ? <><h2>封存</h2><RewardPanel lines={sealed.map((item) => `${ITEM_MAP[item.definitionId]?.name} ×${item.qty}`)} /></> : null}
+      {settlement.returnedSupplies.length ? <><h2>未用的补给</h2><RewardPanel lines={settlement.returnedSupplies.map((item) => `${ITEM_MAP[item.definitionId]?.name} ×${item.qty}`)} /></> : null}
+      {settlement.lost.length || settlement.cultivationDropped ? (
+        <>
+          <h2>没有带回</h2>
+          <RewardPanel lines={[
+            settlement.cultivationDropped ? `修为 ${settlement.cultivationDropped}` : '',
+            ...settlement.lost.map((item) => `${ITEM_MAP[item.definitionId]?.name ?? item.definitionId} ×${item.qty}`),
+          ].filter(Boolean)} />
+        </>
+      ) : null}
+      <h2>接下来</h2>
+      <p>{goal.title}</p>
+      {settlement.advice ? <p className="muted">{settlement.advice}</p> : null}
+      <button className="btn primary" data-testid="claim" onClick={() => act((current) => claimSettlement(current))}>领取并返回</button>
     </main>
   );
 }
@@ -549,10 +717,8 @@ export function CultivateScreen({ save }: { save: SaveData }) {
       <h2>法宝</h2>
       <p className="muted">第二个法宝槽在筑基后解锁。这一段还没有筑基试炼。</p>
       {save.player.realm === 'mortal' ? (
-        <button className="btn primary" disabled={!ready} onClick={() => act((current) => attemptBreakthrough(current))}>
-          {ready ? '尝试突破' : '尝试突破'}
-        </button>
-      ) : <p className="muted">筑基试炼尚未开放。先在竹林取得青髓草。</p>}
+        <button className="btn primary" disabled={!ready} onClick={() => act((current) => attemptBreakthrough(current))}>尝试引气</button>
+      ) : <p className="muted">当前体验到炼气。筑基试炼尚未开放，下一件可做的事是在竹林里取得青髓草。</p>}
       {!ready && save.player.realm === 'mortal' ? <p className="reason">{breakthroughReason(save)}</p> : null}
       {save.player.daoYun > 0 ? <p>道蕴 {save.player.daoYun}。它先记着，这一段不换成攻击。</p> : null}
     </TownFrame>
@@ -580,6 +746,16 @@ export function InventoryScreen({ save }: { save: SaveData }) {
       return true;
     });
   }, [save, type, school]);
+  const learned = useMemo(() => {
+    const rows: { id: string; kind: 'technique' | 'heart' }[] = [];
+    if (type === 'all' || type === 'technique') save.player.learnedTechniqueIds.forEach((id) => rows.push({ id, kind: 'technique' }));
+    if (type === 'all' || type === 'heart') save.player.learnedHeartIds.forEach((id) => rows.push({ id, kind: 'heart' }));
+    return rows.filter((row) => {
+      const def = ITEM_MAP[row.id];
+      if (!def) return false;
+      return school === 'all' || def.school === school || def.school === 'any';
+    });
+  }, [save, type, school]);
   return (
     <>
       {save.run ? <TopStatusBar save={save} onPause={() => act((current) => moveScreen(current, current.run?.phase === 'battle' ? 'battle' : 'run'))} /> : null}
@@ -595,9 +771,23 @@ export function InventoryScreen({ save }: { save: SaveData }) {
           ))}
         </div>
         <div className="tiles">
-          {items.length === 0 ? <EmptyState text="这一栏是空的。" /> : items.map((item) => {
+          {learned.map((row) => {
+            const def = ITEM_MAP[row.id];
+            const equipped = row.kind === 'technique' ? save.player.equipment.techniqueId === row.id : save.player.equipment.heartId === row.id;
+            return (
+              <ItemTile
+                key={`learned-${row.id}`}
+                kind={row.kind}
+                name={def?.name ?? row.id}
+                meta={`${qualityLabel(def?.quality ?? 'common')} · ${typeLabel(row.kind)} · 已学会${equipped ? ' · 装备中' : ''}`}
+                onClick={() => act((current) => row.kind === 'technique' ? equipTechnique(current, row.id) : equipHeart(current, row.id))}
+              />
+            );
+          })}
+          {items.length === 0 && learned.length === 0 ? <EmptyState text="这一栏是空的。" /> : items.map((item) => {
             const def = ITEM_MAP[item.definitionId];
-            return <ItemTile key={item.instanceId} name={def?.name ?? item.definitionId} meta={`${qualityLabel(def?.quality ?? 'common')} · ${typeLabel(def?.type ?? '')}${item.ownership === 'run' ? ' · 本局' : ''}`} qty={item.qty} onClick={() => open(item.instanceId)} />;
+            const equipped = save.player.equipment.treasureInstanceIds.includes(item.instanceId) || save.player.equipment.techniqueId === item.definitionId || save.player.equipment.heartId === item.definitionId || Boolean(save.run?.loadout.treasureInstanceIds.includes(item.instanceId));
+            return <ItemTile key={item.instanceId} kind={def?.type} name={def?.name ?? item.definitionId} meta={`${qualityLabel(def?.quality ?? 'common')} · ${typeLabel(def?.type ?? '')} · ${item.ownership === 'run' ? '本局战利' : '永久'}${equipped ? ' · 装备中' : ''}`} qty={item.qty} onClick={() => open(item.instanceId)} />;
           })}
         </div>
         {save.run ? <button className="btn primary" onClick={() => act((current) => moveScreen(current, current.run?.phase === 'battle' ? 'battle' : current.run?.phase === 'event' ? 'event' : 'run'))}>回到历练</button> : null}
@@ -619,10 +809,11 @@ export function BondsScreen({ save }: { save: SaveData }) {
           <div className="muted">{npc.role} · {npc.label}</div>
           <p>{npc.blurb}</p>
           <p className="muted">最近：{npc.reason}</p>
-          {npc.id === 'npc_jiang' ? <button className="btn" disabled={Boolean(save.world.flags.talk_jiang)} onClick={() => act((current) => talkToJiang(current))}>{save.world.flags.talk_jiang ? '今日无话' : '听她说说药'}</button> : null}
-          {save.world.flags.talk_jiang && npc.id === 'npc_jiang' ? <p className="reason">她已经把要说的话说完了。</p> : null}
+          {npc.id === 'npc_jiang' ? <button className="btn" disabled={Boolean(save.world.flags.talk_jiang)} onClick={() => act((current) => talkToJiang(current))}>{save.world.flags.talk_jiang ? '暂时没有新的消息' : '听她说说药'}</button> : null}
         </article>
       ))}
+      <h2>线索</h2>
+      {save.world.clues.length === 0 ? <p className="muted">还没有可追踪的线索。</p> : save.world.clues.map((clue) => <p key={clue.id}>{clue.text}</p>)}
       <h2>势力</h2>
       {factions.length === 0 ? <p className="muted">还没有和州中势力打过交道。</p> : factions.map((faction) => (
         <div key={faction.id} className="split"><span>{faction.name}</span><span>声望 {faction.value}</span></div>
@@ -677,6 +868,9 @@ export function SettingsScreen({ save }: { save: SaveData }) {
       <button className="btn" onClick={() => act((current) => updateSettings(current, { reduceMotion: !current.settings.reduceMotion }))}>
         {save.settings.reduceMotion ? '已减少动画' : '减少动画'}
       </button>
+      <button className="btn" onClick={() => act((current) => updateSettings(current, { narrative: current.settings.narrative === 'type' ? 'full' : 'type' }))}>
+        剧情：{save.settings.narrative === 'type' ? '逐字' : '直接显示'}
+      </button>
       <button className="btn" onClick={() => act((current) => updateSettings(current, { battleSpeed: current.settings.battleSpeed === 'fast' ? 'normal' : 'fast' }))}>
         战斗速度：{save.settings.battleSpeed === 'fast' ? '快' : '标准'}
       </button>
@@ -713,21 +907,29 @@ export function SettingsScreen({ save }: { save: SaveData }) {
 
 export function BreakthroughScreen({ save }: { save: SaveData }) {
   const [skipped, setSkipped] = useState(save.settings.reduceMotion);
+  const after = playerStats(save);
+  const before = save.ceremonyBaseline ?? after;
   useEffect(() => {
     if (save.settings.reduceMotion) return;
-    const timer = window.setTimeout(() => setSkipped(true), 2400);
+    const timer = window.setTimeout(() => setSkipped(true), 2000);
     return () => window.clearTimeout(timer);
   }, [save.settings.reduceMotion]);
   return (
     <main className="main stack">
-      <SceneArt scene="opening" alt="引气之后的山色" />
+      <SceneArt className="scene banner home-banner" scene="opening" alt="引气之后的山色" />
       {!skipped ? <button className="btn ghost" onClick={() => setSkipped(true)}>跳过</button> : null}
       {skipped ? (
         <>
           <div className="seal-mark">气</div>
           <h1 className="page-title">炼气</h1>
-          <p className="prose">呼吸落到丹田，雨声忽然远了。</p>
-          <p>灵力按炼气初期重新流转。雾隐竹林已经肯为你开门。养元经已领悟。</p>
+          <p className="prose">破庙的雨还在，呼吸却落到了丹田。山路忽然肯为你打开。</p>
+          <div className="panel">
+            <p>气血 {before.maxHp} → {after.maxHp}</p>
+            <p>攻击 {before.atk} → {after.atk}</p>
+            <p>防御 {before.def} → {after.def}</p>
+            <p>灵力 {before.maxMp} → {after.maxMp}</p>
+          </div>
+          <p>雾隐竹林已经开放。养元经已领悟并装备。筑基还没有开放。</p>
           <button className="btn primary" onClick={() => act((current) => acknowledgeCeremony(current))}>记下这一念</button>
         </>
       ) : <p className="prose">气正沿着经脉走完第一圈。</p>}

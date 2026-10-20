@@ -371,8 +371,9 @@ export function continueAfterResult(save: SaveData): StepResult {
   return done(next);
 }
 
-export function actInBattle(save: SaveData, action: BattleAction): StepResult {
+export function actInBattle(save: SaveData, action: BattleAction, expectedRound?: number): StepResult {
   if (!save.run?.battle) return fail('现在没有战斗');
+  if (expectedRound !== undefined && save.run.battle.round !== expectedRound) return fail('这一手已经落下');
   const next = clone(save);
   const error = playAction(next, action);
   if (error) return fail(error);
@@ -581,6 +582,8 @@ export function claimSettlement(save: SaveData): StepResult {
   for (const item of settlement.items) addToList(next.player.inventory, item.definitionId, item.qty, 'permanent');
   for (const item of settlement.returnedSupplies) addToList(next.player.inventory, item.definitionId, item.qty, 'permanent');
   next.player.spiritStones += settlement.stones;
+  const beforeStats = computeStats(next.player);
+  const beforeStage = next.player.stage;
   const cultivated = grantCultivation(next.player, settlement.cultivation);
   settlement.overflowNote = cultivated.notes.join('');
   settlement.claimed = true;
@@ -608,7 +611,13 @@ export function claimSettlement(save: SaveData): StepResult {
   next.calendar.seasonIndex = (next.calendar.seasonIndex + 1) % 4;
   if (next.calendar.seasonIndex === 0) next.calendar.age += 1;
   next.screen = 'home';
-  next.world.feedback = settlement.summary;
+  if (next.player.realm !== 'mortal' && next.player.stage !== beforeStage) {
+    const afterStats = computeStats(next.player);
+    const stageName = next.player.stage === 'mid' ? '中期' : '后期';
+    next.world.feedback = `进入炼气${stageName}。气血 ${beforeStats.maxHp}→${afterStats.maxHp}，攻击 ${beforeStats.atk}→${afterStats.atk}，防御 ${beforeStats.def}→${afterStats.def}，灵力 ${beforeStats.maxMp}→${afterStats.maxMp}。`;
+  } else {
+    next.world.feedback = settlement.summary;
+  }
   track(next, 'run_settled', { dungeon: settlement.dungeonId, kind: settlement.kind });
   const extra = cultivated.notes[0] ? ` ${cultivated.notes.join('')}` : '';
   return done(next, `收获已收入行囊。${extra}`.trim());
@@ -618,11 +627,13 @@ export function attemptBreakthrough(save: SaveData): StepResult {
   if (save.run) return fail('先结束当前历练，再尝试突破');
   if (save.settlement && !save.settlement.claimed) return fail('先领取结算');
   if (save.player.realm !== 'mortal') {
-    return fail('筑基试炼还没有在这一段开放。青髓草可由雾骨山魈处获得；凝露芝不在本段掉落中。');
+    return fail('筑基试炼尚未开放。当前能做的是在竹林里取得青髓草。');
   }
   if (!save.world.flags.qi_taught || !save.world.flags.tutorial_completed) return fail('还没有完成引气前的历练');
   if (save.player.cultivation < 50) return fail(`修为不足，还差${50 - save.player.cultivation}`);
   const next = clone(save);
+  const before = computeStats(next.player);
+  next.ceremonyBaseline = { maxHp: before.maxHp, atk: before.atk, def: before.def, maxMp: before.maxMp };
   const reserve = next.player.insightReserve;
   next.player.realm = 'qi';
   next.player.stage = 'early';
@@ -751,14 +762,14 @@ export function sellItem(save: SaveData, instanceId: string, qty: number): StepR
 }
 
 export function talkToJiang(save: SaveData): StepResult {
-  if (save.world.flags.talk_jiang) return fail('她今天没有新的话');
+  if (save.world.flags.talk_jiang) return fail('暂时没有新的消息');
   const next = clone(save);
   next.world.flags.talk_jiang = true;
   addToList(next.player.inventory, 'mat_wood', 1, 'permanent');
   const current = next.world.relations.npc_jiang?.value ?? 0;
   next.world.relations.npc_jiang = { value: Math.min(100, current + 4), lastReason: '她分了你一枝用得上的灵木' };
   next.world.feedback = '江小满说，山里的药不要一次采尽。破庙那边在下雨。';
-  return done(next, '灵木枝 +1');
+  return done(next);
 }
 
 export function inspectNode(save: SaveData, nodeId: string): StepResult {

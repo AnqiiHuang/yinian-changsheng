@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 120" role="img" aria-label="snake">
+  <rect width="390" height="120" fill="#E3EDE4"/>
+  <path d="M40 90 C80 40 140 110 190 60 C230 20 280 100 350 50" fill="none" stroke="#315E55" stroke-width="10" stroke-linecap="round"/>
+  <path d="M40 90 C80 48 140 102 190 64" fill="none" stroke="#8FBF6A" stroke-width="3"/>
+  <circle cx="346" cy="48" r="7" fill="#315E55"/>
+  <circle cx="348" cy="46" r="2" fill="#F2EBDD"/>
+  <path d="M352 52 L368 58" stroke="#984A3D" stroke-width="2"/>
+</svg>
